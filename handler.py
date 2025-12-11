@@ -5,6 +5,15 @@ import pyotp
 import requests
 import hashlib
 
+def get_otp_obj(secret):
+    return pyotp.TOTP(secret, interval=60) # 60 seconds
+
+def retrieve_user_secret(username):
+    with open(f"users/{username}_vault.json", "r") as f:
+        record = json.load(f)
+
+    return record["otp_special"]
+
 def handle_reg(username, password):
     salt = os.urandom(16) # 16 bytes of random salt
 
@@ -43,21 +52,17 @@ def handle_log(username, password):
         return [400, "err"]
 
 def handle_otp(type, company):
-    if type == "getsecret":
-        try:
-            username = company
-            with open(f"users/{username}_vault.json", "r") as f:
-                record = json.load(f)
-            
-            secret = record["otp_special"]
+    if type == "generate":
+        username = company[0]
+        secret = retrieve_user_secret(username)
+        totp = get_otp_obj(secret)
 
-            return [200, secret]
-        
-        except Exception as e:
-            return [400, "err"]
+        otp_now = totp.now()
+
+        return [200, otp_now]
 
     elif type == "code":
-        code = company
+        code = company[0]
 
         print(f"OTP CODE: {code}")
         return [200, code]
@@ -65,15 +70,16 @@ def handle_otp(type, company):
     elif type == "verify":
         code = company[0]
         username = company[1]
-        # Server URL
-        url = "https://127.0.0.1:4444"
 
-        data = f"otp:verify:{code}:{username}"
+        secret = retrieve_user_secret(username)
+        totp = get_otp_obj(secret)
 
-        response = requests.post(url, data=data, verify=False)
-        # Print server response
-        print(response.text)
-        return response.text
+        if totp.verify(code):
+            print(f"Verified user: {username}")
+            return [200, "ok"]
+        else:
+            print("Couldnt verify.")
+            return [400, "err"]
 
 def handle_req(body):
     if ":" not in body:
